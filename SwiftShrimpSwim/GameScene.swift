@@ -13,8 +13,6 @@ import SpriteKit
 
 class GameScene: SKScene, SKPhysicsContactDelegate {
 
-    var touchForceY : CGFloat = 10.0       // タッチしたときのプレーヤの上への移動量
-                                           // この値が大きいと、ゲームが難しくなる。
     struct Constants {
         // Player 画像の名前の一覧
         static let PlayerImages = ["shrimp01", "shrimp02", "shrimp03", "shrimp04"]
@@ -36,6 +34,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         static let landSpeed : CGFloat = 100          // 地面の移動速度
         static let bgPositionZ : CGFloat = -100.0     // 背景の Z 位置
         static let rockPositionZ : CGFloat = -50.0    // 岩の Z 位置
+        static let landPositionZ : CGFloat = 0.0      // 地面の Z 位置
         static let scorePositionZ : CGFloat = 100     // スコアの　Z 位置
         static let touchForceY_First : CGFloat = 10   // タッチしたときの移動量の初期値
     }
@@ -49,53 +48,56 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         static let None   : UInt32 = (1 << 4)   // スコア加算用SKNodeに衝突した際に設定するカテゴリ
     }
 
+    // ゲームの状態
+    var score: UInt32 = 0              // スコアの内部変数
+    var touchForceY : CGFloat = 10.0   // タッチしたときのプレーヤの上への移動量
+                                       // この値が大きいと、ゲームが難しくなる。
+
+    // SKSpritNode
     var baseNode: SKNode!              // プレイキャラ以外の移動オブジェクトを追加する空ノード
     var coralNode: SKNode!             // サンゴ関連のオブジェクトを追加する空ノード(リスタート時に活用)
     var player: SKSpriteNode!          // プレイキャラ
     var scoreLabelNode: SKLabelNode!   // スコアを表示するラベル
-    var score: UInt32 = 0              // スコアの内部変数
 
     override func didMoveToView(view: SKView) {
-
-        // ゲームの設定
-        func setupGame() {
-            score = 0        // スコアの初期化
-            touchForceY = 0  // touch 時の移動量
-
-            // 物理シミュレーションを設定
-            self.physicsWorld.gravity = CGVector(dx: 0.0, dy: -2.0)
-            self.physicsWorld.contactDelegate = self
-
-            // 全ノードの親となるノードを生成
-            baseNode = SKNode()
-            self.addChild(baseNode)
-
-            // 障害物を追加するノードを生成
-            coralNode = SKNode()
-            baseNode.addChild(coralNode)
-
-            setupBackgroundSea()    // 背景画像を構築
-            setupBackgroundRock()   // 背景の岩山画像を構築
-            setupCeilingAndLand()   // 天井と地面を構築
-            setupPlayer()           // プレイキャラを構築
-            setupCoral()            // 障害物のサンゴを構築
-            setupScoreLabel()       // スコアラベルの構築
-        }
-
-        setupGame()                 // ゲームの設定
+        setupGame()                             // ゲームの設定
         startGame(Constants.touchForceY_First)  // プレー開始
+    }
+
+    // ゲームの設定
+    func setupGame() {
+        // 物理シミュレーションを設定
+        self.physicsWorld.gravity = CGVector(dx: 0.0, dy: -2.0)
+        self.physicsWorld.contactDelegate = self
+
+        // 全ノードの親となるノードを生成
+        baseNode = SKNode()
+        self.addChild(baseNode)
+
+        // 障害物を追加するノードを生成
+        coralNode = SKNode()
+        baseNode.addChild(coralNode)
+
+        setupBackgroundSea()    // 背景画像を構築
+        setupBackgroundRock()   // 背景の岩山画像を構築
+        setupCeilingAndLand()   // 天井と地面を構築
+        setupPlayer()           // プレイキャラを構築
+        setupCoral()            // 障害物のサンゴを構築
+        setupScoreLabel()       // スコアラベルの構築
+
+        score = 0        // スコアの初期化
+        touchForceY = 0  // touch 時の移動量
     }
 
     // プレー開始
     func startGame(forceY : CGFloat) {
 
+        // ゲームの状態をセット
         self.touchForceY = forceY
-
-        // 障害物を全て取り除く
-        coralNode.removeAllChildren()
-
-        // スコアをリセット
         initScore()
+
+        // 既存の障害物を全て取り除く
+        coralNode.removeAllChildren()
 
         // プレイキャラを再配置
         player.position = CGPoint(x: self.frame.midX * 0.7, y: self.frame.midY * 1.2)
@@ -114,8 +116,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         updateScore()
     }
     // スコアに加点する
-    func incPoint() {
-        score += 1
+    func incPoint(point : UInt32 = 1) {
+        score += point
         updateScore()
     }
     // スコア表示を更新
@@ -127,35 +129,48 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         scoreLabelNode.runAction(SKAction.sequence([scaleUpAnim, scaleDownAnim]))
     }
 
+    // 横スクロールのアニメーションを作成する。
+    func makeAnimeHorizontalScroll(texture : SKTexture, speed : CGFloat, yPosition : CGFloat, zPosition: CGFloat, isBg : Bool = false) {
+        let width = texture.size().width
+        // 左に画像一枚分移動のアニメーションを作成
+        let moveAnim = SKAction.moveByX(-width, y: 0.0, duration: NSTimeInterval(width / Constants.bgSpeed))
+        // 元の位置に戻すアニメーションを作成
+        let resetAnim = SKAction.moveByX(width, y: 0.0, duration: 0.0)
+
+        // 移動して元に戻すアニメーションを繰り返すアニメーションを作成
+        let repeatForeverAnim = SKAction.repeatActionForever(SKAction.sequence([moveAnim, resetAnim]))
+
+        let needNumber = 2.0 + (self.frame.size.width / texture.size().width)
+        for var i:CGFloat = 0; i < needNumber; ++i {
+            // SKTexture から SKSpriteNode を作成
+            let sprite = SKSpriteNode(texture: texture)
+            // 奥行きの位置 (zPositon) を設定
+            sprite.zPosition = zPosition
+            // 画像の初期位置を設定
+            sprite.position = CGPoint(x: i * sprite.size.width, y: yPosition)
+
+            if isBg == false {
+                // 画像に物理シミュレーションを設定
+                sprite.physicsBody = SKPhysicsBody(texture: texture, size: sprite.size)
+                sprite.physicsBody?.dynamic = false
+                sprite.physicsBody?.categoryBitMask = ColliderType.World
+            }
+            // アニメーションを設定
+            sprite.runAction(repeatForeverAnim)
+            // 親ノードに追加
+            baseNode.addChild(sprite)
+        }
+    }
+
     // 背景画像を構築
     func setupBackgroundSea() {
         // 背景画像を読み込む
         let texture = SKTexture(imageNamed: Constants.BackgroundImage)
         texture.filteringMode = .Nearest
 
-        // 必要な画像枚数を算出
-        let needNumber = 2.0 + (self.frame.size.width / texture.size().width)
-
-        // 左に画像一枚分移動アニメーションを作成
-        let moveAnim = SKAction.moveByX(-texture.size().width, y: 0.0, duration: NSTimeInterval(texture.size().width / Constants.bgSpeed))
-        // 元の位置に戻すアニメーションを作成
-        let resetAnim = SKAction.moveByX(texture.size().width, y: 0.0, duration: 0.0)
-        // 移動して元に戻すアニメーションを繰り返すアニメーションを作成
-        let repeatForeverAnim = SKAction.repeatActionForever(SKAction.sequence([moveAnim, resetAnim]))
-
-        // 画像の配置とアニメーションを設定
-        for var i:CGFloat = 0; i < needNumber; ++i {
-            // SKTexture から SKSpriteNode を作成
-            let sprite = SKSpriteNode(texture: texture)
-            // 一番奥に配置
-            sprite.zPosition = Constants.bgPositionZ
-            // 画像の初期位置を設定
-            sprite.position = CGPoint(x: i * sprite.size.width, y: self.frame.size.height / 2.0)
-            // アニメーションを設定
-            sprite.runAction(repeatForeverAnim)
-            // 親ノードに追加
-            baseNode.addChild(sprite)
-        }
+        // 画像を配置してアニメーションを設定
+        let yPosition = texture.size().height / 2.0
+        makeAnimeHorizontalScroll(texture, speed: Constants.bgSpeed, yPosition: yPosition, zPosition: Constants.bgPositionZ, isBg: true)
     }
 
     // 背景の岩山画像を構築
@@ -164,151 +179,81 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let under = SKTexture(imageNamed: Constants.RockUnderImage)
         under.filteringMode = .Nearest
 
-        // 必要な画像枚数を算出
-        var needNumber = 2.0 + (self.frame.size.width / under.size().width)
-
-        // 左に画像一枚分移動アニメーションを作成
-        let moveUnderAnim = SKAction.moveByX(-under.size().width, y: 0.0, duration:NSTimeInterval(under.size().width / Constants.rockSpeed))
-        // 元の位置に戻すアニメーションを作成
-        let resetUnderAnim = SKAction.moveByX(under.size().width, y: 0.0, duration: 0.0)
-        // 移動して元に戻すアニメーションを繰り返すアニメーションを作成
-        let repeatForeverUnderAnim = SKAction.repeatActionForever(SKAction.sequence([moveUnderAnim, resetUnderAnim]))
-
         // 画像の配置とアニメーションを設定
-        for var i:CGFloat = 0; i < needNumber; ++i {
-            // SKTexture から SKSpriteNode を作成
-            let sprite = SKSpriteNode(texture: under)
-
-            // 背景画像より手前に設定
-            sprite.zPosition = Constants.rockPositionZ
-            // 画像の初期位置を設定
-            sprite.position = CGPoint(x: i * sprite.size.width, y: sprite.size.height / 2.0 )
-            // アニメーションを設定
-            sprite.runAction(repeatForeverUnderAnim)
-            // 親ノードに追加
-            baseNode.addChild(sprite)
-        }
+        let yPosition = under.size().height / 2.0
+        makeAnimeHorizontalScroll(under, speed: Constants.rockSpeed, yPosition: yPosition, zPosition: Constants.rockPositionZ, isBg: true)
 
         // 岩山(上)画像を読み込む
         let above = SKTexture(imageNamed: Constants.RockAboveImage)
         above.filteringMode = .Nearest
 
-        // 必要な画像枚数を算出
-        needNumber = 2.0 + (self.frame.size.width / above.size().width)
-
-        // 左に画像一枚分移動アニメーションを作成
-        let moveAboveAnim = SKAction.moveByX(-above.size().width, y: 0.0, duration:NSTimeInterval(above.size().width / 20.0))
-        // 元の位置に戻すアニメーションを作成
-        let resetAboveAnim = SKAction.moveByX(above.size().width, y: 0.0, duration: 0.0)
-        // 移動して元に戻すアニメーションを繰り返すアニメーションを作成
-        let repeatForeverAboveAnim = SKAction.repeatActionForever(SKAction.sequence([moveAboveAnim, resetAboveAnim]))
-
         // 画像の配置とアニメーションを設定
-        for var i:CGFloat = 0; i < needNumber; ++i {
-            // SKTexture から SKSpriteNode を作成
-            let sprite = SKSpriteNode(texture: above)
-            // 背景画像より手前に設定
-            sprite.zPosition = Constants.rockPositionZ
-            // 画像の初期位置を設定
-            sprite.position = CGPoint(x: i * sprite.size.width, y: self.frame.size.height - (sprite.size.height / 2.0))
-            // アニメーションを設定
-            sprite.runAction(repeatForeverAboveAnim)
-            // 親ノードに追加
-            baseNode.addChild(sprite)
-        }
+        let yPosition2 = self.size.height - above.size().height / 2.0
+        makeAnimeHorizontalScroll(above, speed: Constants.rockSpeed, yPosition: yPosition2, zPosition: Constants.rockPositionZ, isBg: true)
     }
 
-    /// 天井と地面を構築
+    // 天井と地面を構築
     func setupCeilingAndLand() {
         // 地面画像を読み込み
         let land = SKTexture(imageNamed: Constants.LandImage)
         land.filteringMode = .Nearest
 
-        // 必要な画像枚数を算出
-        var needNumber = 2.0 + (self.frame.size.width / land.size().width)
-
-        // 左に画像一枚分移動アニメーションを作成
-        let moveLandAnim = SKAction.moveByX(-land.size().width, y: 0.0, duration:NSTimeInterval(land.size().width / Constants.landSpeed))
-        // 元の位置に戻すアニメーションを作成
-        let resetLandAnim = SKAction.moveByX(land.size().width, y: 0.0, duration: 0.0)
-        // 移動して元に戻すアニメーションを繰り返すアニメーションを作成
-        let repeatForeverLandAnim = SKAction.repeatActionForever(SKAction.sequence([moveLandAnim, resetLandAnim]))
-
         // 画像の配置とアニメーションを設定
-        for var i:CGFloat = 0.0; i < needNumber; ++i {
-            // SKTextureからSKSpriteNodeを作成
-            let sprite = SKSpriteNode(texture: land)
-            // 画像の初期位置を設定
-            sprite.position = CGPoint(x: i * sprite.size.width, y: sprite.size.height / 2.0)
-
-            // 画像に物理シミュレーションを設定
-            sprite.physicsBody = SKPhysicsBody(texture: land, size: land.size())
-            sprite.physicsBody?.dynamic = false
-            sprite.physicsBody?.categoryBitMask = ColliderType.World
-            // アニメーションを設定
-            sprite.runAction(repeatForeverLandAnim)
-            // 親ノードに追加
-            baseNode.addChild(sprite)
-        }
+        let yPosition = land.size().height / 2.0
+        makeAnimeHorizontalScroll(land, speed: Constants.landSpeed, yPosition: yPosition, zPosition: Constants.landSpeed)
 
         // 天井画像を読み込み
         let ceiling = SKTexture(imageNamed: Constants.CeilingImage)
         ceiling.filteringMode = .Nearest
 
-        // 必要な画像枚数を算出
-        needNumber = 2.0 + self.frame.size.width / ceiling.size().width
-
         // 画像の配置とアニメーションを設定
-        for var i:CGFloat = 0.0; i < needNumber; i++ {
-            // SKTextureからSKSpriteNodeを作成
-            let sprite = SKSpriteNode(texture: ceiling)
-            // 画像の初期位置を設定
-            sprite.position = CGPoint(x: i * sprite.size.width, y: self.frame.size.height - sprite.size.height / 2.0)
-
-            // 画像に物理シミュレーションを設定
-            sprite.physicsBody = SKPhysicsBody(texture: ceiling, size: ceiling.size())
-            sprite.physicsBody?.dynamic = false
-            sprite.physicsBody?.categoryBitMask = ColliderType.World
-            // アニメーションを設定
-            sprite.runAction(repeatForeverLandAnim)
-            // 親ノードに追加
-            baseNode.addChild(sprite)
-        }
+        let yPosition2 = self.size.height - ceiling.size().height / 2.0
+        makeAnimeHorizontalScroll(ceiling, speed: Constants.landSpeed, yPosition: yPosition2, zPosition: Constants.landSpeed)
     }
 
     // プレイヤーを構築
     func setupPlayer() {
-        // Player のパラパラアニメーション作成に必要な SKTexture クラスの配列を定義
-        var playerTexture = [SKTexture]()
 
-        // パラパラアニメーションに必要な画像を読み込む
-        for imageName in Constants.PlayerImages {
-            let texture = SKTexture(imageNamed: imageName)
-            texture.filteringMode = .Linear
-            playerTexture.append(texture)
+        func makePlayerNode() -> (SKTexture, SKSpriteNode) {
+            // Player のパラパラアニメーション作成に必要な SKTexture クラスの配列を定義
+            var playerTexture = [SKTexture]()
+
+            // パラパラアニメーションに必要な画像を読み込む
+            for imageName in Constants.PlayerImages {
+                let texture = SKTexture(imageNamed: imageName)
+                texture.filteringMode = .Linear
+                playerTexture.append(texture)
+            }
+
+            // キャラクターのアニメーションをパラパラ漫画のように切り替える
+            let playerAnimation = SKAction.animateWithTextures(playerTexture, timePerFrame: 0.2)
+            // パラパラアニメーションをループさせる
+            let loopAnimation = SKAction.repeatActionForever(playerAnimation)
+
+            // キャラクターを生成
+            let sprite = SKSpriteNode(texture: playerTexture[0])
+
+            // 初期表示位置を設定
+            sprite.position = CGPoint(x: self.frame.midX * 0.7, y: self.frame.size.height * 0.5)
+            // アニメーションを設定
+
+            sprite.runAction(loopAnimation)
+            return (playerTexture[0], sprite)
         }
 
-        // キャラクターのアニメーションをパラパラ漫画のように切り替える
-        let playerAnimation = SKAction.animateWithTextures(playerTexture, timePerFrame: 0.2)
-        // パラパラアニメーションをループさせる
-        let loopAnimation = SKAction.repeatActionForever(playerAnimation)
-
-        // キャラクターを生成
-        player = SKSpriteNode(texture: playerTexture[0])
-
-        // 初期表示位置を設定
-        player.position = CGPoint(x: self.frame.size.width * 0.35, y: self.frame.size.height * 0.6)
-        // アニメーションを設定
-        player.runAction(loopAnimation)
+        // player の sprite を生成
+        let r = makePlayerNode()
+        let texture = r.0
+        player = r.1
 
         // 物理シミュレーションを設定
-        player.physicsBody = SKPhysicsBody(texture: playerTexture[0], size: playerTexture[0].size())
+        player.physicsBody = SKPhysicsBody(texture: texture, size: texture.size())
         player.physicsBody?.dynamic = true
         player.physicsBody?.allowsRotation = false
 
         // 自分自身に Player カテゴリを設定
         player.physicsBody?.categoryBitMask = ColliderType.Player
-        // 衝突判定相手に World と Coralを設定
+        // 衝突判定相手に World と Coral を設定
         player.physicsBody?.collisionBitMask = ColliderType.World | ColliderType.Coral
         player.physicsBody?.contactTestBitMask = ColliderType.World | ColliderType.Coral
 
@@ -336,12 +281,19 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         // サンゴを生成するメソッドを呼び出すアニメーションを作成
         let newCoralAnim = SKAction.runBlock({
+
+            func setPhisicsAttr(sprite : SKNode, bitmask : UInt32) {
+                sprite.physicsBody?.dynamic = false
+                sprite.physicsBody?.categoryBitMask = bitmask
+                sprite.physicsBody?.contactTestBitMask = ColliderType.Player
+            }
+
             // サンゴに関するノードを乗せるノードを作成
             let coral = SKNode()
             coral.position = CGPoint(x: self.frame.size.width + coralUnder.size().width * 2, y: 0.0)
             coral.zPosition = Constants.rockPositionZ
 
-            // 地面から伸びるサンゴのy座標を算出
+            // 地面から伸びるサンゴの y 座標を乱数で算出
             let height = UInt32(self.frame.size.height / 12)
             let y = CGFloat(arc4random_uniform(height * 2) + height)
 
@@ -351,9 +303,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
             // サンゴに物理シミュレーションを設定
             under.physicsBody = SKPhysicsBody(texture: coralUnder, size: under.size)
-            under.physicsBody?.dynamic = false
-            under.physicsBody?.categoryBitMask = ColliderType.Coral
-            under.physicsBody?.contactTestBitMask = ColliderType.Player
+            setPhisicsAttr(under, ColliderType.Coral)
             coral.addChild(under)
 
             // 天井から伸びるサンゴを作成
@@ -362,21 +312,18 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
             // サンゴに物理シミュレーションを設定
             above.physicsBody = SKPhysicsBody(texture: coralAbove, size: above.size)
-            above.physicsBody?.dynamic = false
-            above.physicsBody?.categoryBitMask = ColliderType.Coral
-            above.physicsBody?.contactTestBitMask = ColliderType.Player
+            setPhisicsAttr(above, ColliderType.Coral)
             coral.addChild(above)
 
-            // スコアをカウントアップするノードを作成
+            // スコアをカウントアップするスコアノードを作成
             let scoreNode = SKNode()
             scoreNode.position = CGPoint(x: (above.size.width / 2.0) + 5.0, y: self.frame.height / 2.0)
 
             // スコアノードに物理シミュレーションを設定
             scoreNode.physicsBody = SKPhysicsBody(rectangleOfSize: CGSize(width: 10.0, height: self.frame.size.height))
-            scoreNode.physicsBody?.dynamic = false
-            scoreNode.physicsBody?.categoryBitMask = ColliderType.Score
-            scoreNode.physicsBody?.contactTestBitMask = ColliderType.Player
+            setPhisicsAttr(scoreNode, ColliderType.Score)
             coral.addChild(scoreNode)
+
             coral.runAction(coralAnim)
 
             self.coralNode.addChild(coral)
@@ -385,6 +332,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let delayAnim = SKAction.waitForDuration(2.5)
         // 上記 2 つを永遠に繰り返すアニメーションを作成
         let repeatForeverAnim = SKAction.repeatActionForever(SKAction.sequence([newCoralAnim, delayAnim]))
+
         // この画面で実行
         self.runAction(repeatForeverAnim)
     }
@@ -395,12 +343,11 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         scoreLabelNode = SKLabelNode(fontNamed: Constants.ScoreFont)
         // フォント色を設定
         scoreLabelNode.fontColor = Constants.ScoreColor
+
         // 表示位置を設定
         scoreLabelNode.position = CGPoint(x: self.frame.midX, y: self.frame.maxY * 0.9)
         // 最前面に表示
         scoreLabelNode.zPosition = Constants.scorePositionZ
-        // スコアを表示
-        scoreLabelNode.text = String(score)
 
         self.addChild(scoreLabelNode)
     }
@@ -433,22 +380,26 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             (contact.bodyB.categoryBitMask & rawNoneType) == rawNoneType {
                 // なにもしない
         } else {
-            // baseNode に追加されたものすべてのアニメーションを停止
-            baseNode.speed = 0.0
-
-            // プレイキャラの BitMask を変更
-            player.physicsBody?.collisionBitMask = ColliderType.World
-            // プレイキャラに回転アニメーションを実行
-            let rolling = SKAction.rotateByAngle(CGFloat(M_PI) * player.position.y * 0.01, duration: 1.0)
-            player.runAction(rolling, completion:{
-                // アニメーション終了時にプレイキャラのアニメーションを停止
-                self.player.speed = 0.0
-            })
-            // ゲームオーバーの表示
-            let sprite = SKSpriteNode(imageNamed: Constants.GameOverImage)
-            sprite.position = CGPoint(x: self.frame.midX, y: self.frame.midY)
-            self.coralNode.addChild(sprite)
+            doGameOver()
         }
+    }
+
+    func doGameOver() {
+        // baseNode に追加されたものすべてのアニメーションを停止
+        baseNode.speed = 0.0
+
+        // プレイキャラの BitMask を変更
+        player.physicsBody?.collisionBitMask = ColliderType.World
+        // プレイキャラに回転アニメーションを実行
+        let rolling = SKAction.rotateByAngle(CGFloat(M_PI) * player.position.y * 0.01, duration: 1.0)
+        player.runAction(rolling, completion:{
+            // アニメーション終了時にプレイキャラのアニメーションを停止
+            self.player.speed = 0.0
+        })
+        // ゲームオーバーの表示
+        let sprite = SKSpriteNode(imageNamed: Constants.GameOverImage)
+        sprite.position = CGPoint(x: self.frame.midX, y: self.frame.midY)
+        self.coralNode.addChild(sprite)
     }
 
     override func touchesBegan(touches: Set<NSObject>, withEvent event: UIEvent) {
